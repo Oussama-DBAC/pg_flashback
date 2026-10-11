@@ -167,5 +167,5 @@ See `TEST_SCHEMA_GLOBAL_RESTORE.sql` in this repository for a concrete example o
 
 
 ## License
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
+This project is licensed under the **BSD 2-Clause License**.
 Copyright (c) 2026 Oussama CHAOUACHI (DBACCOMPANY). All rights reserved.

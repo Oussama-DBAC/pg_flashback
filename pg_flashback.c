@@ -3,7 +3,7 @@
  * pg_flashback.c
  * PostgreSQL background worker & logical decoding wrapper for flashback.
  *
- * License: GNU General Public License v3.0 (GPL-3.0).
+ * License: BSD 2-Clause License.
  * Copyright (c) 2026 Oussama CHAOUACHI (DBACCOMPANY)
  *
  *-------------------------------------------------------------------------
