@@ -162,9 +162,51 @@ To restore complex relational schemas safely, you must orchestrate a "Global Res
 2. Rollback all related tables to the **exact same timestamp**.
 3. Re-enable constraints (`ENABLE TRIGGER ALL`).
 
-See `TEST_SCHEMA_GLOBAL_RESTORE.sql` in this repository for a concrete example of this pattern.
+For a concrete global-restore example, apply `flashback_table()` to each
+related table at the same timestamp between the `DISABLE TRIGGER ALL` /
+`ENABLE TRIGGER ALL` steps above.
 
+### Tuning capture throughput
+The background worker consumes changes from the replication slot in batches.
+The batch size is configurable:
 
+```ini
+# Max logical-decoding changes consumed per worker cycle (default 5000).
+# Raise it if a high-write workload makes the slot fall behind.
+pg_flashback.max_changes_per_cycle = 5000
+```
+If the slot lag (and WAL usage) grows under sustained writes, increase this.
+
+### Replication slot and WAL retention (important)
+Each monitored database gets a logical replication slot named
+`flashback_slot_<db>`. **A logical slot retains WAL until it is consumed or
+dropped**, so an abandoned slot can fill `pg_wal` and take the server down.
+
+- On `DROP EXTENSION pg_flashback`, the worker detects the extension is gone
+  and **drops its slot automatically** on its next cycle.
+- If you instead stop monitoring a database by removing it from
+  `pg_flashback.database_names` (and reloading), the worker for it no longer
+  runs, so drop its slot manually:
+  ```sql
+  SELECT pg_drop_replication_slot('flashback_slot_' || current_database());
+  ```
+- Monitor slot lag with:
+  ```sql
+  SELECT slot_name, pg_size_pretty(
+           pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS retained
+  FROM pg_replication_slots WHERE slot_name LIKE 'flashback_slot_%';
+  ```
+
+### Limitations
+- **Primary key required.** `table_as_of()` and the rollback functions identify
+  rows by primary key. `table_as_of()` currently keys on a single-column PK;
+  tables without a PK are rejected.
+- **Type fidelity on rollback.** Rows are reconstructed from the captured JSON
+  values via text, which can be lossy for some types (arrays, `bytea`,
+  composites). Since `flashback_table()` overwrites live data, validate on a
+  copy (`flashback_to_new_table()`) first for exotic column types.
+- **Transaction id.** `xid` is captured into the event log and surfaced by
+  `changes_between()` for auditing.
 
 ## License
 This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
