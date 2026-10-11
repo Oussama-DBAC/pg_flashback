@@ -180,7 +180,7 @@ $$;
 CREATE OR REPLACE FUNCTION flashback_internal.enable_table_logic(
 p_table_name TEXT,
 p_undo_retention INTERVAL DEFAULT NULL
-) RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT;
 v_table TEXT;
@@ -214,14 +214,14 @@ COALESCE(p_undo_retention, (SELECT undo_retention FROM flashback_internal.fb_con
 END;
 $$;
 CREATE OR REPLACE FUNCTION flashback_internal.set_default_undo_retention_logic(period INTERVAL)
-RETURNS TEXT LANGUAGE sql SECURITY DEFINER AS $$
+RETURNS TEXT LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 INSERT INTO flashback_internal.fb_config (config_key, undo_retention)
 VALUES ('db_default', period)
 ON CONFLICT (config_key) DO UPDATE SET undo_retention = EXCLUDED.undo_retention;
 SELECT 'Default retention updated to ' || period::text;
 $$;
 CREATE OR REPLACE FUNCTION flashback_internal.set_table_undo_retention_logic(p_table_name TEXT, p_period INTERVAL)
-RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_key TEXT := p_table_name;
 BEGIN
@@ -398,7 +398,7 @@ old_row JSONB,
 new_row JSONB,
 xid TEXT,
 lsn pg_lsn
-) LANGUAGE plpgsql SECURITY DEFINER AS $$
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT; v_table TEXT;
 BEGIN
@@ -421,7 +421,7 @@ CREATE OR REPLACE FUNCTION flashback_internal.get_row_at_logic(
 p_table_name TEXT,
 pk_json JSONB,
 target_ts TIMESTAMPTZ
-) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT; v_table TEXT;
 v_current JSONB;
@@ -476,7 +476,7 @@ RETURN v_state;
 END;
 $$;
 CREATE OR REPLACE FUNCTION flashback_internal.set_storage_mode_logic(p_mode TEXT)
-RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 r RECORD;
 BEGIN
@@ -510,7 +510,7 @@ FROM flashback_internal.fb_event
 GROUP BY 1, 2, 3
 ORDER BY 1 DESC, 4 DESC;
 CREATE OR REPLACE FUNCTION flashback_internal.disable_table_logic(p_table_name TEXT)
-RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT;
 v_table TEXT;
@@ -534,7 +534,7 @@ RETURN format('Table %s disabled for Flashback and history cleared.', v_full_nam
 END;
 $$;
 CREATE OR REPLACE FUNCTION flashback_internal.get_retention_horizon_logic(p_table_name TEXT)
-RETURNS TIMESTAMPTZ LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TIMESTAMPTZ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT; v_table TEXT;
 v_min_ts TIMESTAMPTZ;
@@ -561,7 +561,7 @@ commit_ts TIMESTAMPTZ,
 operation CHAR(1),
 identifier JSONB,
 changes JSONB
-) LANGUAGE plpgsql SECURITY DEFINER AS $$
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT; v_table TEXT;
 BEGIN
@@ -588,7 +588,7 @@ CREATE OR REPLACE FUNCTION flashback_internal.flashback_to_new_table_logic(
 p_table_name TEXT,
 p_new_table_name TEXT,
 p_target_ts TIMESTAMPTZ
-) RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS TEXT LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
 v_schema TEXT; v_table TEXT;
 v_new_schema TEXT; v_new_table TEXT;
@@ -698,3 +698,15 @@ SELECT * FROM flashback_internal.get_transactions_logic(p_table_name, p_start_ts
 $$;
 CREATE OR REPLACE FUNCTION flashback.set_storage_mode(TEXT)
 RETURNS TEXT AS '$libdir/pg_flashback', 'pg_flashback_set_storage_mode' LANGUAGE C;
+
+-- Least privilege: the public API can rewrite live tables (flashback_table),
+-- clone arbitrary tables (flashback_to_new_table) and purge history
+-- (disable_table). It is DBA/operator tooling and must NOT be executable by
+-- PUBLIC by default. Deny by default; grant EXECUTE explicitly to the role(s)
+-- that are authorized to operate flashback, e.g.:
+--
+--   CREATE ROLE flashback_operator NOLOGIN;
+--   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA flashback TO flashback_operator;
+--   GRANT flashback_operator TO <your_dba_role>;
+--
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA flashback FROM PUBLIC;
